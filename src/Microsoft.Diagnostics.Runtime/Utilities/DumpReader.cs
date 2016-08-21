@@ -1515,7 +1515,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
         internal void GetHandleDetails()
         {
-            DumpUtility.MINIDUMP_HANDLE_DATA_STREAM handleData = default(DumpUtility.MINIDUMP_HANDLE_DATA_STREAM);
+            //DumpUtility.MINIDUMP_HANDLE_DATA_STREAM handleData = default(DumpUtility.MINIDUMP_HANDLE_DATA_STREAM);
             IntPtr streamPointer = default(IntPtr);
             uint streamSize = 0;
 
@@ -1529,6 +1529,8 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             {
 
             }
+            var handleData = (DumpUtility.MINIDUMP_HANDLE_DATA_STREAM)
+                Marshal.PtrToStructure(streamPointer, typeof(DumpUtility.MINIDUMP_HANDLE_DATA_STREAM));
 
             //Advancing the pointer
             streamPointer = streamPointer + (int)handleData.SizeOfHeader;
@@ -1536,14 +1538,15 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             var dumpPtr = DumpPointer.DangerousMakeDumpPointer(streamPointer, streamSize);
             if (handleData.SizeOfDescriptor == Marshal.SizeOf(typeof(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR)))
             {
-                DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR[] handles = ReadArray<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR>(streamPointer);
+                
+                //DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR[] handles = ReadArray<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR>(streamPointer);
 
                 //foreach (var handle in handles)
                 //{
                 //    result.Add(new MiniDumpHandle(handle));
                 //}
             }
-            else if (handleData.SizeOfDescriptor == Marshal.SizeOf(typeof(MINIDUMP_HANDLE_DESCRIPTOR_2)))
+            else if (handleData.SizeOfDescriptor == Marshal.SizeOf(typeof(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2)))
             {
                 DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2[] handles = ReadArray<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2>(
                     streamPointer, (int)handleData.NumberOfDescriptors);
@@ -1557,20 +1560,21 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             }
         }
 
-        unsafe T[] ReadArray<T>(IntPtr absoluteAddress, int count, SafeMemoryMappedViewHandle safeHandle) where T : struct
+
+        unsafe T[] ReadArray<T>(IntPtr absoluteAddress, int count) where T : struct
         {
             T[] readItems = new T[count];
             try
             {
-                byte* baseOfView = null;
-                safeHandle.AcquirePointer(ref baseOfView);
-                ulong offset = (ulong)absoluteAddress - (ulong)baseOfView;
-                safeHandle.ReadArray<T>(offset, readItems, 0, count);
-
+               // byte* baseOfView = default(byte*);
+               // _view.AcquirePointer(ref baseOfView);
+                ulong offset = (ulong)absoluteAddress - (ulong)_view.BaseAddress;
+                _view.ReadArray<T>(offset, readItems, 0, count);
+                
             }
             finally
             {
-                safeHandle.ReleasePointer();
+                _view.ReleasePointer();
 
             }
             return readItems;
@@ -1773,7 +1777,10 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                 Marshal.ThrowExceptionForHR(error, new IntPtr(-1));
             }
 
+
+
             _view = NativeMethods.MapViewOfFile(_fileMapping, NativeMethods.FILE_MAP_READ, 0, 0, IntPtr.Zero);
+            
             if (_view.IsInvalid)
             {
                 int error = Marshal.GetHRForLastWin32Error();
@@ -1807,6 +1814,8 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             _mappedFileMemory = new DumpNative.LoadedFileMemoryLookups();
             IsMinidump = DumpNative.IsMiniDump(_view.BaseAddress);
             IsHeapAvailable = DumpNative.IsHeapAvailable(_view.BaseAddress);
+
+            GetHandleDetails();
         }
 
 
