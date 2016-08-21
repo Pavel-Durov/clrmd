@@ -1513,6 +1513,68 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
         }
 
 
+        internal void GetHandleDetails()
+        {
+            DumpUtility.MINIDUMP_HANDLE_DATA_STREAM handleData = default(DumpUtility.MINIDUMP_HANDLE_DATA_STREAM);
+            IntPtr streamPointer = default(IntPtr);
+            uint streamSize = 0;
+
+            var suceess = DumpReader.DumpNative.MiniDumpReadDumpStream(
+                    _view.BaseAddress,
+                    DumpNative.MINIDUMP_STREAM_TYPE.HandleDataStream,
+                    out streamPointer, out streamSize
+                    );
+
+            if (!suceess)
+            {
+
+            }
+
+            //Advancing the pointer
+            streamPointer = streamPointer + (int)handleData.SizeOfHeader;
+
+            var dumpPtr = DumpPointer.DangerousMakeDumpPointer(streamPointer, streamSize);
+            if (handleData.SizeOfDescriptor == Marshal.SizeOf(typeof(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR)))
+            {
+                DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR[] handles = ReadArray<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR>(streamPointer);
+
+                //foreach (var handle in handles)
+                //{
+                //    result.Add(new MiniDumpHandle(handle));
+                //}
+            }
+            else if (handleData.SizeOfDescriptor == Marshal.SizeOf(typeof(MINIDUMP_HANDLE_DESCRIPTOR_2)))
+            {
+                DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2[] handles = ReadArray<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2>(
+                    streamPointer, (int)handleData.NumberOfDescriptors);
+
+                //foreach (var handle in handles)
+                //{
+                //    MiniDumpHandle temp = GetHandleData(handle, streamPointer);
+
+                //    result.Add(temp);
+                //}
+            }
+        }
+
+        unsafe T[] ReadArray<T>(IntPtr absoluteAddress, int count, SafeMemoryMappedViewHandle safeHandle) where T : struct
+        {
+            T[] readItems = new T[count];
+            try
+            {
+                byte* baseOfView = null;
+                safeHandle.AcquirePointer(ref baseOfView);
+                ulong offset = (ulong)absoluteAddress - (ulong)baseOfView;
+                safeHandle.ReadArray<T>(offset, readItems, 0, count);
+
+            }
+            finally
+            {
+                safeHandle.ReleasePointer();
+
+            }
+            return readItems;
+        }
 
         internal ulong ReadPointerUnsafe(ulong addr)
         {
@@ -1579,7 +1641,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
             return bytesRead;
         }
-        
+
 #pragma warning disable 0420
         private volatile bool _disposing;
         private volatile int _lock = 0;
@@ -2406,6 +2468,64 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
     /// </summary>
     internal static class DumpUtility
     {
+
+        internal struct MINIDUMP_HANDLE_DESCRIPTOR_2
+        {
+            public UInt64 Handle;
+            public Int32 TypeNameRva;
+            public Int32 ObjectNameRva;
+            public UInt32 Attributes;
+            public UInt32 GrantedAccess;
+            public UInt32 HandleCount;
+            public UInt32 PointerCount;
+            public Int32 ObjectInfoRva;
+            public UInt32 Reserved0;
+        }
+
+        internal struct MINIDUMP_HANDLE_OBJECT_INFORMATION
+        {
+            public uint NextInfoRva;
+            public MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE InfoType;
+            public UInt32 SizeOfInfo;
+        }
+
+        internal struct MINIDUMP_HANDLE_DESCRIPTOR
+        {
+            public UInt64 Handle;
+            public Int32 TypeNameRva;
+            public Int32 ObjectNameRva;
+            public UInt32 Attributes;
+            public UInt32 GrantedAccess;
+            public UInt32 HandleCount;
+            public UInt32 PointerCount;
+        }
+
+        // Per-handle object information varies according to
+        // the OS, the OS version, the processor type and
+        // so on.  The minidump gives a minidump identifier
+        // to each possible data format for identification
+        // purposes but does not control nor describe the actual data.
+        public enum MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE : uint
+        {
+            MiniHandleObjectInformationNone,
+            MiniThreadInformation1,
+            MiniMutantInformation1,
+            MiniMutantInformation2,
+            MiniProcessInformation1,
+            MiniProcessInformation2,
+            MiniEventInformation1,
+            MiniSectionInformation1,
+            MiniHandleObjectInformationTypeMax
+        }
+
+        internal struct MINIDUMP_HANDLE_DATA_STREAM
+        {
+            public UInt32 SizeOfHeader;
+            public UInt32 SizeOfDescriptor;
+            public UInt32 NumberOfDescriptors;
+            public UInt32 Reserved;
+        }
+
         [StructLayout(LayoutKind.Explicit)]
         // See http://msdn.microsoft.com/msdnmag/issues/02/02/PE/default.aspx for more details
 
