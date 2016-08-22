@@ -1538,7 +1538,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                     {
                         var structure = streamPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2>();
                         result.Add(new MiniDumpHandle(structure));
-                        streamPointer.Adjust((ulong)handleData.SizeOfDescriptor);
+                        streamPointer = streamPointer.Adjust((ulong)handleData.SizeOfDescriptor);
                     }
                 }
             }
