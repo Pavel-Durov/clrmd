@@ -1512,36 +1512,37 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             return bytesRead;
         }
 
-        internal List<MiniDumpHandle> GetHandleDetails()
+        public List<MiniDumpHandle> GetHandleDetails()
         {
             List<MiniDumpHandle> result = new List<MiniDumpHandle>();
-            DumpPointer streamPointer;
+            DumpPointer dumpPointer;
 
-            if (TryGetStream(DumpNative.MINIDUMP_STREAM_TYPE.HandleDataStream, out streamPointer))
+            if (TryGetStream(DumpNative.MINIDUMP_STREAM_TYPE.HandleDataStream, out dumpPointer))
             {
-                var handleData = streamPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DATA_STREAM>();
+                var handleData = dumpPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DATA_STREAM>();
 
-                streamPointer = streamPointer.Adjust(handleData.SizeOfHeader);
+                dumpPointer = dumpPointer.Adjust(handleData.SizeOfHeader);
 
                 if (handleData.SizeOfDescriptor == Marshal.SizeOf(typeof(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR)))
                 {
                     for (int i = 0; i < handleData.NumberOfDescriptors; i++)
                     {
-                        var structure = streamPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR>();
+                        var structure = dumpPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR>();
                         result.Add(new MiniDumpHandle(structure));
-                        streamPointer.Adjust((ulong)handleData.SizeOfDescriptor);
+                        dumpPointer = dumpPointer.Adjust((ulong)handleData.SizeOfDescriptor);
                     }
                 }
                 else if (handleData.SizeOfDescriptor == Marshal.SizeOf(typeof(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2)))
                 {
                     for (int i = 0; i < handleData.NumberOfDescriptors; i++)
                     {
-                        var structure = streamPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2>();
+                        var structure = dumpPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2>();
                         result.Add(new MiniDumpHandle(structure));
-                        streamPointer = streamPointer.Adjust((ulong)handleData.SizeOfDescriptor);
+                        dumpPointer = dumpPointer.Adjust((ulong)handleData.SizeOfDescriptor);
                     }
                 }
             }
+
             return result;
         }
 
@@ -1779,8 +1780,6 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             _mappedFileMemory = new DumpNative.LoadedFileMemoryLookups();
             IsMinidump = DumpNative.IsMiniDump(_view.BaseAddress);
             IsHeapAvailable = DumpNative.IsHeapAvailable(_view.BaseAddress);
-
-            GetHandleDetails();
         }
 
 
@@ -2616,6 +2615,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
         PROCESSOR_ARCHITECTURE_AMD64 = 9,
         PROCESSOR_ARCHITECTURE_IA32_ON_WIN64 = 10,
     }
+
 
     internal class MiniDumpHandle
     {
