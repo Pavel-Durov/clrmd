@@ -20,6 +20,7 @@ using System.Diagnostics;
 using System.Runtime.Serialization;
 using Microsoft.Diagnostics.Runtime.Desktop;
 using System.Threading;
+using static Microsoft.Diagnostics.Runtime.Utilities.DumpReader;
 
 // This provides a managed wrapper over the unmanaged dump-reading APIs in DbgHelp.dll.
 // 
@@ -1512,6 +1513,10 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             return bytesRead;
         }
 
+        /// <summary>
+        /// Read MiniDump handles from dump file
+        /// </summary>
+        /// <returns></returns>
         public List<MiniDumpHandle> GetHandleDetails()
         {
             List<MiniDumpHandle> result = new List<MiniDumpHandle>();
@@ -1528,7 +1533,8 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                     for (int i = 0; i < handleData.NumberOfDescriptors; i++)
                     {
                         var structure = dumpPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR>();
-                        result.Add(new MiniDumpHandle(structure));
+                        
+                        result.Add(GetHandleData(structure));
                         dumpPointer = dumpPointer.Adjust((ulong)handleData.SizeOfDescriptor);
                     }
                 }
@@ -1537,13 +1543,151 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                     for (int i = 0; i < handleData.NumberOfDescriptors; i++)
                     {
                         var structure = dumpPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2>();
-                        result.Add(new MiniDumpHandle(structure));
+                        result.Add(GetHandleData(structure, dumpPointer));
                         dumpPointer = dumpPointer.Adjust((ulong)handleData.SizeOfDescriptor);
                     }
                 }
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Constructs handles wrapped class with MINIDUMP_HANDLE_DESCRIPTOR_2 struct data
+        /// </summary>
+        /// <param name="handle">minidump structure descriptor</param>
+        /// <param name="pointer">DumpPointer to stream</param>
+        /// <returns></returns>
+        private MiniDumpHandle GetHandleData(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2 handle, DumpPointer pointer)
+        {
+            string objectName, typeName;
+            typeName = objectName = null;
+        
+            if (handle.ObjectNameRva != 0)
+            {
+                objectName = GetString(new DumpNative.RVA() { Value = (uint)handle.ObjectNameRva });
+            }
+            if (handle.TypeNameRva != 0)
+            {
+                typeName = GetString(new DumpNative.RVA() { Value = (uint)handle.TypeNameRva });
+            }
+
+            var result = new MiniDumpHandle(handle, objectName, typeName);
+
+            if (handle.HandleCount > 0 && handle.ObjectInfoRva > 0)
+            {
+                SetMiniDumpObjectInfo(result, handle, pointer);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Constructs handles wrapped class with MINIDUMP_HANDLE_DESCRIPTOR struct data
+        /// </summary>
+        /// <param name="handle">minidump structure descriptor</param>
+        /// <returns></returns>
+        private MiniDumpHandle GetHandleData(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR handle)
+        {
+            string objectName, typeName;
+            typeName = objectName = null;
+
+            if (handle.ObjectNameRva != 0)
+            {
+                objectName = GetString(new DumpNative.RVA() { Value = (uint)handle.ObjectNameRva });
+            }
+            if (handle.TypeNameRva != 0)
+            {
+                typeName = GetString(new DumpNative.RVA() { Value = (uint)handle.TypeNameRva });
+            }
+
+            return new MiniDumpHandle(handle, objectName, typeName) ;
+        }
+
+        private void SetMiniDumpObjectInfo(MiniDumpHandle result, DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2 handle, DumpPointer pointer)
+        {            
+            var handleInfoPtr = this.TranslateRVA((ulong)handle.ObjectInfoRva);
+
+            var info = handleInfoPtr.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION>();
+            do
+            {
+                SetHandleObjectInformation(info, result, pointer);
+
+                if (info.NextInfoRva != 0)
+                {
+                    var nextInfoPtr = this.TranslateRVA(info.NextInfoRva);
+                    info = nextInfoPtr.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION>();
+                    result.AddInfo(info);
+                }
+            }
+            while (info.NextInfoRva != 0 && info.SizeOfInfo != 0);
+        }
+
+        public void SetHandleObjectInformation(
+            DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION pObjectInfo, MiniDumpHandle handle, DumpPointer dumpPointer)
+        {
+            switch (pObjectInfo.InfoType)
+            {
+                case DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE.MiniHandleObjectInformationNone:
+                    {
+                        handle.Type = MiniDumpHandleType.NONE;
+                    }
+                    break;
+                case DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE.MiniThreadInformation1:
+                    {
+                        handle.Type = MiniDumpHandleType.THREAD;
+
+                        var additional_info = dumpPointer.PtrToStructure<THREAD_ADDITIONAL_INFO>();
+                        handle.OwnerProcessId = additional_info.ProcessId;
+                        handle.OwnerThreadId = additional_info.ThreadId;
+                    }
+                    break;
+                case DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE.MiniMutantInformation1:
+                    {
+                        handle.Type = MiniDumpHandleType.MUTEX1;
+
+                        var additional_infoM1 = dumpPointer.PtrToStructure<MUTEX_ADDITIONAL_INFO_1>();
+
+                        handle.MutexUnknown = new MutexUnknownFields()
+                        {
+                            Field1 = additional_infoM1.Unknown1,
+                            Field2 = additional_infoM1.Unknown2
+                        };
+                    }
+                    break;
+                case DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE.MiniMutantInformation2:
+                    {
+                        handle.Type = MiniDumpHandleType.MUTEX2;
+
+                        var additional_infoM2 = dumpPointer.PtrToStructure<MUTEX_ADDITIONAL_INFO_2>();
+                        handle.OwnerProcessId = additional_infoM2.OwnerProcessId;
+                        handle.OwnerThreadId = additional_infoM2.OwnerThreadId;
+                    }
+                    break;
+                case DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE.MiniProcessInformation1:
+                    {
+                        handle.Type = MiniDumpHandleType.PROCESS1;
+                    }
+                    break;
+                case DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE.MiniProcessInformation2:
+                    {
+                        handle.Type = MiniDumpHandleType.PROCESS2;
+                        var additional_infoP2 = dumpPointer.PtrToStructure<PROCESS_ADDITIONAL_INFO_2>();
+                        handle.OwnerProcessId = additional_infoP2.ProcessId;
+                        handle.OwnerThreadId = 0;
+                    }
+                    break;
+                case DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE.MiniEventInformation1:
+                    handle.Type = MiniDumpHandleType.EVENT;
+                    break;
+                case DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE.MiniSectionInformation1:
+                    handle.Type = MiniDumpHandleType.SECTION;
+                    break;
+                case DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE.MiniHandleObjectInformationTypeMax:
+                    handle.Type = MiniDumpHandleType.TYPE_MAX;
+                    break;
+                default:
+                    break;
+            }
         }
 
         internal ulong ReadPointerUnsafe(ulong addr)
@@ -1780,6 +1924,8 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             _mappedFileMemory = new DumpNative.LoadedFileMemoryLookups();
             IsMinidump = DumpNative.IsMiniDump(_view.BaseAddress);
             IsHeapAvailable = DumpNative.IsHeapAvailable(_view.BaseAddress);
+
+            GetHandleDetails();
         }
 
 
@@ -2441,6 +2587,24 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
     /// </summary>
     internal static class DumpUtility
     {
+        // Per-handle object information varies according to
+        // the OS, the OS version, the processor type and
+        // so on.  The minidump gives a minidump identifier
+        // to each possible data format for identification
+        // purposes but does not control nor describe the actual data.
+        public enum MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE : uint
+        {
+            MiniHandleObjectInformationNone,
+            MiniThreadInformation1,
+            MiniMutantInformation1,
+            MiniMutantInformation2,
+            MiniProcessInformation1,
+            MiniProcessInformation2,
+            MiniEventInformation1,
+            MiniSectionInformation1,
+            MiniHandleObjectInformationTypeMax
+        }
+
 
         internal struct MINIDUMP_HANDLE_DESCRIPTOR_2
         {
@@ -2471,24 +2635,6 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             public UInt32 GrantedAccess;
             public UInt32 HandleCount;
             public UInt32 PointerCount;
-        }
-
-        // Per-handle object information varies according to
-        // the OS, the OS version, the processor type and
-        // so on.  The minidump gives a minidump identifier
-        // to each possible data format for identification
-        // purposes but does not control nor describe the actual data.
-        public enum MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE : uint
-        {
-            MiniHandleObjectInformationNone,
-            MiniThreadInformation1,
-            MiniMutantInformation1,
-            MiniMutantInformation2,
-            MiniProcessInformation1,
-            MiniProcessInformation2,
-            MiniEventInformation1,
-            MiniSectionInformation1,
-            MiniHandleObjectInformationTypeMax
         }
 
         internal struct MINIDUMP_HANDLE_DATA_STREAM
@@ -2620,10 +2766,10 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
     internal class MiniDumpHandle
     {
         /// <summary>
-        /// Construct unified minidump descriptor
+        /// Construct unified minidump descriptor using MINIDUMP_HANDLE_DESCRIPTOR structure
         /// </summary>
         /// <param name="handleDescriptor">MiniDump handle structure</param>
-        public MiniDumpHandle(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR handleDescriptor)
+        private MiniDumpHandle(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR handleDescriptor)
         {
             Handle = handleDescriptor.Handle;
             HandleCount = handleDescriptor.HandleCount;
@@ -2635,10 +2781,10 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
         }
 
         /// <summary>
-        ///  Construct unified minidump descriptor
+        ///  Construct unified minidump descriptor using MINIDUMP_HANDLE_DESCRIPTOR_2 structure
         /// </summary>
         /// <param name="handleDescriptor">MiniDump handle structure</param>
-        public MiniDumpHandle(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2 handleDescriptor)
+        private MiniDumpHandle(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2 handleDescriptor)
         {
             Handle = handleDescriptor.Handle;
             HandleCount = handleDescriptor.HandleCount;
@@ -2650,6 +2796,26 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             ObjectInfoRva = handleDescriptor.ObjectInfoRva;
         }
 
+        public MiniDumpHandle(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2 handleDescriptor, string objectName, string typeName) : this(handleDescriptor)
+        {
+            ObjectName = objectName;
+            TypeName = typeName;
+        }
+
+        public MiniDumpHandle(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR handleDescriptor, string objectName, string typeName) : this(handleDescriptor)
+        {
+            this.ObjectName = objectName;
+            this.TypeName = typeName;
+        }
+
+        /// <summary>
+        /// Name of Minidump handle object 
+        /// </summary>
+        public string ObjectName { get; private set; }
+        /// <summary>
+        /// Name of Minidump handle type object 
+        /// </summary>
+        public string TypeName { get; private set; }
         /// <summary>
         /// Handle address
         /// </summary>
@@ -2658,7 +2824,6 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
         /// Amount of handles
         /// </summary>
         public uint HandleCount { get; private set; }
-
         /// <summary>
         /// An RVA to a MINIDUMP_STRING structure that specifies the object name of the handle. This member can be 0.
         /// </summary>
@@ -2683,5 +2848,203 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
         ///  An RVA to a MINIDUMP_HANDLE_OBJECT_INFORMATION sttructure
         /// </summary>
         public Int32 ObjectInfoRva { get; private set; }
+        /// <summary>
+        /// Type of MiniDump handle
+        /// </summary>
+        public MiniDumpHandleType Type { get; set; }
+        /// <summary>
+        /// </summary>
+        public uint OwnerProcessId { get; internal set; }
+        /// <summary>
+        /// Handle owner thread id
+        /// </summary>
+        public uint OwnerThreadId { get; internal set; }
+        /// <summary>
+        /// Unknown mutex fields
+        /// </summary>
+        public MutexUnknownFields MutexUnknown { get; internal set; }
+
+        /// <summary>
+        /// Additional minidump handle
+        /// </summary>
+        public List<MiniDumpHandleInfo> HandleInfoList { get; private set; }
+
+        internal void AddInfo(DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION info)
+        {
+            if (HandleInfoList == null)
+            {
+                HandleInfoList = new List<MiniDumpHandleInfo>();
+            }
+            HandleInfoList.Add(new MiniDumpHandleInfo(info));
+        }
     }
+
+    /// <summary>
+    /// MiniDumpHandle type enumeration
+    /// </summary>
+    public enum MiniDumpHandleType
+    {
+        /// <summary>
+        /// No Type
+        /// </summary>
+        NONE,
+        /// <summary>
+        /// Thread Type
+        /// </summary>
+        THREAD,
+        /// <summary>
+        /// Mutex Type
+        /// </summary>
+        MUTEX1,
+        /// <summary>
+        /// Mutex Type
+        /// </summary>
+        MUTEX2,
+        /// <summary>
+        /// Process Type
+        /// </summary>
+        PROCESS1,
+        /// <summary>
+        /// Process Type
+        /// </summary>
+        PROCESS2,
+        /// <summary>
+        /// Event Type
+        /// </summary>
+        EVENT,
+        /// <summary>
+        /// Critical Section Type
+        /// </summary>
+        SECTION,
+        /// <summary>
+        /// Max Type
+        /// </summary>
+        TYPE_MAX
+    }
+    /// <summary>
+    /// Mutex unknown fields
+    /// </summary>
+    public class MutexUnknownFields
+    {
+        /// <summary>
+        /// First mutex unknown field
+        /// </summary>
+        public object Field1 { get; internal set; }
+        /// <summary>
+        /// Second mutex unknown field
+        /// </summary>
+        public object Field2 { get; internal set; }
+    }
+
+    /// <summary>
+    /// Handle additional object info constructed by MINIDUMP_HANDLE_OBJECT_INFORMATION structure 
+    /// </summary>
+    internal class MiniDumpHandleInfo
+    {
+        internal MiniDumpHandleInfo(DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION info)
+        {
+            this.SizeOfInfo = info.SizeOfInfo;
+            this.InfoType = info.InfoType;
+        }
+        /// <summary>
+        /// Type of object 
+        /// </summary>
+        internal DumpUtility.MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE InfoType { get; private set; }
+
+        /// <summary>
+        /// Size of object information
+        /// </summary>
+        internal UInt32 SizeOfInfo { get; private set; }
+    }
+#if !(_WIN64)
+
+    internal struct THREAD_ADDITIONAL_INFO
+    {
+        public UInt32 Unknown1;
+        public UInt32 Unknown2;
+        public UInt32 ProcessId;
+        public UInt32 ThreadId;
+        public UInt32 Unknown3;
+        public UInt32 Priority;
+        public UInt32 Unknown4;
+    };
+
+    internal struct MUTEX_ADDITIONAL_INFO_1
+    {
+        public UInt32 Unknown1;
+        public UInt32 Unknown2;
+    };
+
+    internal struct MUTEX_ADDITIONAL_INFO_2
+    {   
+        public UInt32 OwnerProcessId;
+
+        public UInt32 OwnerThreadId;
+    };
+
+    internal struct PROCESS_ADDITIONAL_INFO_2
+    {
+        public UInt32 Unknown1;
+        public UInt32 Unknown2;
+        public UInt32 Unknown3;
+        public UInt32 Unknown4;
+        public UInt32 Unknown5;
+        public UInt32 ProcessId;
+        public UInt32 ParentProcessId;
+        public UInt32 Unknown6;
+    };
+
+#else
+
+    struct MUTEX_ADDITIONAL_INFO_2
+    {
+        DWORD OwnerProcessId;
+        DWORD Unknown1;
+        DWORD OwnerThreadId;
+        DWORD Unknown2;
+    };
+
+    struct MUTEX_ADDITIONAL_INFO_1
+    {
+        DWORD Unknown1;
+        DWORD Unknown2;
+    };
+
+    struct THREAD_ADDITIONAL_INFO
+    {
+        DWORD Unknown1;
+        DWORD Unknown2;
+        DWORD Unknown3;
+        DWORD Unknown4;
+        DWORD ProcessId;
+        DWORD Unknown5;
+        DWORD ThreadId;
+        DWORD Unknown6;
+        DWORD Unknown7;
+        DWORD Unknown8;
+        DWORD Priority;
+        DWORD Unknown9;
+    };
+
+    struct PROCESS_ADDITIONAL_INFO_2
+    {
+        DWORD Unknown1;
+        DWORD Unknown2;
+        DWORD Unknown3;
+        DWORD Unknown4;
+        DWORD Unknown5;
+        DWORD Unknown6;
+        DWORD Unknown7;
+        DWORD Unknown8;
+        DWORD BasePriority;
+        DWORD Unknown10;
+        DWORD ProcessId;
+        DWORD Unknown12;
+        DWORD ParentProcessId;
+        DWORD Unknown14;
+        DWORD Unknown15;
+        DWORD Unknown16;
+    };
+
+#endif
 }
