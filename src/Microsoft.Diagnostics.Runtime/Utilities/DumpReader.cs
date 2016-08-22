@@ -386,9 +386,9 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
             #region MiniDump Handles
 
-            public class MINIDUMP_HANDLES
+            public class MINIDUMP_HANDLES_STREAM
             {
-                public MINIDUMP_HANDLES(DumpPointer pStream, DumpReader contex)
+                public MINIDUMP_HANDLES_STREAM(DumpPointer pStream, DumpReader contex)
                 {
                     _pStream = pStream;
                     _contex = contex;
@@ -1928,8 +1928,6 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             _mappedFileMemory = new DumpNative.LoadedFileMemoryLookups();
             IsMinidump = DumpNative.IsMiniDump(_view.BaseAddress);
             IsHeapAvailable = DumpNative.IsHeapAvailable(_view.BaseAddress);
-
-            EnumerateHandles();
         }
 
 
@@ -2229,10 +2227,10 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             return new DumpNative.MINIDUMP_EXCEPTION_STREAM(pStream);
         }
 
-        private DumpNative.MINIDUMP_HANDLES GetHandleStream()
+        private DumpNative.MINIDUMP_HANDLES_STREAM GetHandleStream()
         {
             DumpPointer pStream = GetStream(DumpNative.MINIDUMP_STREAM_TYPE.HandleDataStream);
-            return new DumpNative.MINIDUMP_HANDLES(pStream, this);
+            return new DumpNative.MINIDUMP_HANDLES_STREAM(pStream, this);
         }
 
 
@@ -2354,9 +2352,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
         /// <returns></returns>
         public IEnumerable<DumpHandle> EnumerateHandles()
         {
-            var stream = GetHandleStream();
-            var list = stream.GetHandleDetails().ToList();
-            return stream.GetHandleDetails();
+            return GetHandleStream().GetHandleDetails();
         }
 
         #endregion // Modules
