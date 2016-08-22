@@ -787,7 +787,7 @@ namespace Microsoft.Diagnostics.Runtime
         }
     }
 
-    internal sealed class SafeMapViewHandle : SafeBuffer
+    internal sealed class SafeMapViewHandle : SafeHandleZeroOrMinusOneIsInvalid
     {
         private SafeMapViewHandle() : base(true) { }
 

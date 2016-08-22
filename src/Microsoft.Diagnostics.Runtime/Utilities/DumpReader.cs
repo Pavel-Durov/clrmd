@@ -1512,72 +1512,37 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
             return bytesRead;
         }
 
-
-        internal void GetHandleDetails()
+        internal List<MiniDumpHandle> GetHandleDetails()
         {
-            //DumpUtility.MINIDUMP_HANDLE_DATA_STREAM handleData = default(DumpUtility.MINIDUMP_HANDLE_DATA_STREAM);
-            IntPtr streamPointer = default(IntPtr);
-            uint streamSize = 0;
+            List<MiniDumpHandle> result = new List<MiniDumpHandle>();
+            DumpPointer streamPointer;
 
-            var suceess = DumpReader.DumpNative.MiniDumpReadDumpStream(
-                    _view.BaseAddress,
-                    DumpNative.MINIDUMP_STREAM_TYPE.HandleDataStream,
-                    out streamPointer, out streamSize
-                    );
-
-            if (!suceess)
+            if (TryGetStream(DumpNative.MINIDUMP_STREAM_TYPE.HandleDataStream, out streamPointer))
             {
+                var handleData = streamPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DATA_STREAM>();
 
+                streamPointer = streamPointer.Adjust(handleData.SizeOfHeader);
+
+                if (handleData.SizeOfDescriptor == Marshal.SizeOf(typeof(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR)))
+                {
+                    for (int i = 0; i < handleData.NumberOfDescriptors; i++)
+                    {
+                        var structure = streamPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR>();
+                        result.Add(new MiniDumpHandle(structure));
+                        streamPointer.Adjust((ulong)handleData.SizeOfDescriptor);
+                    }
+                }
+                else if (handleData.SizeOfDescriptor == Marshal.SizeOf(typeof(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2)))
+                {
+                    for (int i = 0; i < handleData.NumberOfDescriptors; i++)
+                    {
+                        var structure = streamPointer.PtrToStructure<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2>();
+                        result.Add(new MiniDumpHandle(structure));
+                        streamPointer.Adjust((ulong)handleData.SizeOfDescriptor);
+                    }
+                }
             }
-            var handleData = (DumpUtility.MINIDUMP_HANDLE_DATA_STREAM)
-                Marshal.PtrToStructure(streamPointer, typeof(DumpUtility.MINIDUMP_HANDLE_DATA_STREAM));
-
-            //Advancing the pointer
-            streamPointer = streamPointer + (int)handleData.SizeOfHeader;
-
-            var dumpPtr = DumpPointer.DangerousMakeDumpPointer(streamPointer, streamSize);
-            if (handleData.SizeOfDescriptor == Marshal.SizeOf(typeof(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR)))
-            {
-                
-                //DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR[] handles = ReadArray<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR>(streamPointer);
-
-                //foreach (var handle in handles)
-                //{
-                //    result.Add(new MiniDumpHandle(handle));
-                //}
-            }
-            else if (handleData.SizeOfDescriptor == Marshal.SizeOf(typeof(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2)))
-            {
-                DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2[] handles = ReadArray<DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2>(
-                    streamPointer, (int)handleData.NumberOfDescriptors);
-
-                //foreach (var handle in handles)
-                //{
-                //    MiniDumpHandle temp = GetHandleData(handle, streamPointer);
-
-                //    result.Add(temp);
-                //}
-            }
-        }
-
-
-        unsafe T[] ReadArray<T>(IntPtr absoluteAddress, int count) where T : struct
-        {
-            T[] readItems = new T[count];
-            try
-            {
-               // byte* baseOfView = default(byte*);
-               // _view.AcquirePointer(ref baseOfView);
-                ulong offset = (ulong)absoluteAddress - (ulong)_view.BaseAddress;
-                _view.ReadArray<T>(offset, readItems, 0, count);
-                
-            }
-            finally
-            {
-                _view.ReleasePointer();
-
-            }
-            return readItems;
+            return result;
         }
 
         internal ulong ReadPointerUnsafe(ulong addr)
@@ -1780,7 +1745,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
 
             _view = NativeMethods.MapViewOfFile(_fileMapping, NativeMethods.FILE_MAP_READ, 0, 0, IntPtr.Zero);
-            
+
             if (_view.IsInvalid)
             {
                 int error = Marshal.GetHRForLastWin32Error();
@@ -2650,5 +2615,73 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
         PROCESSOR_ARCHITECTURE_MSIL = 8,
         PROCESSOR_ARCHITECTURE_AMD64 = 9,
         PROCESSOR_ARCHITECTURE_IA32_ON_WIN64 = 10,
+    }
+
+    internal class MiniDumpHandle
+    {
+        /// <summary>
+        /// Construct unified minidump descriptor
+        /// </summary>
+        /// <param name="handleDescriptor">MiniDump handle structure</param>
+        public MiniDumpHandle(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR handleDescriptor)
+        {
+            Handle = handleDescriptor.Handle;
+            HandleCount = handleDescriptor.HandleCount;
+            ObjectNameRva = handleDescriptor.ObjectNameRva;
+            PointerCount = handleDescriptor.PointerCount;
+            TypeNameRva = handleDescriptor.TypeNameRva;
+            Attributes = handleDescriptor.Attributes;
+            GrantedAccess = handleDescriptor.GrantedAccess;
+        }
+
+        /// <summary>
+        ///  Construct unified minidump descriptor
+        /// </summary>
+        /// <param name="handleDescriptor">MiniDump handle structure</param>
+        public MiniDumpHandle(DumpUtility.MINIDUMP_HANDLE_DESCRIPTOR_2 handleDescriptor)
+        {
+            Handle = handleDescriptor.Handle;
+            HandleCount = handleDescriptor.HandleCount;
+            ObjectNameRva = handleDescriptor.ObjectNameRva;
+            PointerCount = handleDescriptor.PointerCount;
+            TypeNameRva = handleDescriptor.TypeNameRva;
+            Attributes = handleDescriptor.Attributes;
+            GrantedAccess = handleDescriptor.GrantedAccess;
+            ObjectInfoRva = handleDescriptor.ObjectInfoRva;
+        }
+
+        /// <summary>
+        /// Handle address
+        /// </summary>
+        public ulong Handle { get; private set; }
+        /// <summary>
+        /// Amount of handles
+        /// </summary>
+        public uint HandleCount { get; private set; }
+
+        /// <summary>
+        /// An RVA to a MINIDUMP_STRING structure that specifies the object name of the handle. This member can be 0.
+        /// </summary>
+        public Int32 ObjectNameRva { get; private set; }
+        /// <summary>
+        /// This is the number kernel references to the object that this handle refers to. 
+        /// </summary>
+        public uint PointerCount { get; private set; }
+        /// <summary>
+        /// An RVA to a MINIDUMP_STRING structure that specifies the object type name of the handle. This member can be 0.
+        /// </summary>
+        public Int32 TypeNameRva { get; private set; }
+        /// <summary>
+        /// /The attributes for the handle, this corresponds to OBJ_INHERIT, OBJ_CASE_INSENSITIVE, etc.
+        /// </summary>
+        public uint Attributes { get; private set; }
+        /// <summary>
+        /// The meaning of this member depends on the handle type and the operating system.
+        /// </summary>
+        public uint GrantedAccess { get; private set; }
+        /// <summary>
+        ///  An RVA to a MINIDUMP_HANDLE_OBJECT_INFORMATION sttructure
+        /// </summary>
+        public Int32 ObjectInfoRva { get; private set; }
     }
 }

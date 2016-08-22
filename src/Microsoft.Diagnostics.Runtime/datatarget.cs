@@ -745,7 +745,7 @@ namespace Microsoft.Diagnostics.Runtime
         /// <returns>A DataTarget instance.</returns>
         public static DataTarget LoadCrashDump(string fileName)
         {
-            new DumpReader(@"C:\Temp\Dumps\Dump_Test.dmp");
+            new DumpReader(@"C:\temp\newdump\CRITICAL_ConsoleApplication7.dmp");
 
             DbgEngDataReader reader = new DbgEngDataReader(fileName);
             return CreateFromReader(reader, reader.DebuggerInterface);
