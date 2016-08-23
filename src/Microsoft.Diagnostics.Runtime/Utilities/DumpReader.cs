@@ -391,11 +391,11 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                 public MINIDUMP_HANDLES_STREAM(DumpPointer pStream, DumpReader contex)
                 {
                     _pStream = pStream;
-                    _contex = contex;
+                    _context = contex;
                 }
 
                 DumpPointer _pStream;
-                DumpReader _contex;
+                DumpReader _context;
 
                 /// <summary>
                 /// Read MiniDump handles from dump file
@@ -439,11 +439,11 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
                     if (handle.ObjectNameRva != 0)
                     {
-                        objectName = _contex.GetString(new DumpNative.RVA() { Value = (uint)handle.ObjectNameRva });
+                        objectName = _context.GetString(new DumpNative.RVA() { Value = (uint)handle.ObjectNameRva });
                     }
                     if (handle.TypeNameRva != 0)
                     {
-                        typeName = _contex.GetString(new DumpNative.RVA() { Value = (uint)handle.TypeNameRva });
+                        typeName = _context.GetString(new DumpNative.RVA() { Value = (uint)handle.TypeNameRva });
                     }
 
                     var result = new DumpHandle(handle, objectName, typeName);
@@ -467,11 +467,11 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
                     if (handle.ObjectNameRva != 0)
                     {
-                        objectName = _contex.GetString(new DumpNative.RVA() { Value = (uint)handle.ObjectNameRva });
+                        objectName = _context.GetString(new DumpNative.RVA() { Value = (uint)handle.ObjectNameRva });
                     }
                     if (handle.TypeNameRva != 0)
                     {
-                        typeName = _contex.GetString(new DumpNative.RVA() { Value = (uint)handle.TypeNameRva });
+                        typeName = _context.GetString(new DumpNative.RVA() { Value = (uint)handle.TypeNameRva });
                     }
 
                     return new DumpHandle(handle, objectName, typeName);
@@ -479,7 +479,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
                 private void SetMiniDumpObjectInfo(DumpHandle result, MINIDUMP_HANDLE_DESCRIPTOR_2 handle, DumpPointer pointer)
                 {
-                    var handleInfoPtr = _contex.TranslateRVA((ulong)handle.ObjectInfoRva);
+                    var handleInfoPtr = _context.TranslateRVA((ulong)handle.ObjectInfoRva);
 
                     var objectInfo = handleInfoPtr.PtrToStructure<MINIDUMP_HANDLE_OBJECT_INFORMATION>();
                     do
@@ -488,7 +488,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
                         if (objectInfo.NextInfoRva != 0)
                         {
-                            var nextInfoPtr = _contex.TranslateRVA(objectInfo.NextInfoRva);
+                            var nextInfoPtr = _context.TranslateRVA(objectInfo.NextInfoRva);
                             objectInfo = nextInfoPtr.PtrToStructure<MINIDUMP_HANDLE_OBJECT_INFORMATION>();
                             result.AddInfo(objectInfo);
                         }
@@ -508,9 +508,9 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                             {
                                 handle.Type = DumpHandleType.THREAD;
 
-                                var threaInfo = dumpPointer.PtrToStructure<THREAD_ADDITIONAL_INFO>();
-                                handle.OwnerProcessId = threaInfo.ProcessId;
-                                handle.OwnerThreadId = threaInfo.ThreadId;
+                                var threadInfo = dumpPointer.PtrToStructure<THREAD_ADDITIONAL_INFO>();
+                                handle.OwnerProcessId = threadInfo.ProcessId;
+                                handle.OwnerThreadId = threadInfo.ThreadId;
                             }
                             break;
                         case MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE.MiniMutantInformation1:
@@ -540,8 +540,8 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                         case MINIDUMP_HANDLE_OBJECT_INFORMATION_TYPE.MiniProcessInformation2:
                             {
                                 handle.Type = DumpHandleType.PROCESS2;
-                                var processInfro2 = dumpPointer.PtrToStructure<PROCESS_ADDITIONAL_INFO_2>();
-                                handle.OwnerProcessId = processInfro2.ProcessId;
+                                var processInfo2 = dumpPointer.PtrToStructure<PROCESS_ADDITIONAL_INFO_2>();
+                                handle.OwnerProcessId = processInfo2.ProcessId;
                                 handle.OwnerThreadId = 0;
                             }
                             break;
@@ -2941,7 +2941,6 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
     internal struct MUTEX_ADDITIONAL_INFO_2
     {
         public UInt32 OwnerProcessId;
-
         public UInt32 OwnerThreadId;
     };
 
@@ -2959,7 +2958,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
 #else
 
-    struct MUTEX_ADDITIONAL_INFO_2
+    internal struct MUTEX_ADDITIONAL_INFO_2
     {
         DWORD OwnerProcessId;
         DWORD Unknown1;
@@ -2967,13 +2966,13 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
         DWORD Unknown2;
     };
 
-    struct MUTEX_ADDITIONAL_INFO_1
+    internal struct MUTEX_ADDITIONAL_INFO_1
     {
         DWORD Unknown1;
         DWORD Unknown2;
     };
 
-    struct THREAD_ADDITIONAL_INFO
+    internal struct THREAD_ADDITIONAL_INFO
     {
         DWORD Unknown1;
         DWORD Unknown2;
@@ -2989,7 +2988,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
         DWORD Unknown9;
     };
 
-    struct PROCESS_ADDITIONAL_INFO_2
+    internal struct PROCESS_ADDITIONAL_INFO_2
     {
         DWORD Unknown1;
         DWORD Unknown2;
