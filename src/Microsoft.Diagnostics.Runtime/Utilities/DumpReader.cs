@@ -494,9 +494,10 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
                         if (objectInfo.NextInfoRva != 0)
                         {
-                            var nextInfoPtr = _context.TranslateRVA(objectInfo.NextInfoRva);
+                            var rva = objectInfo.NextInfoRva;
+                            var nextInfoPtr = _context.TranslateRVA(rva);
                             objectInfo = nextInfoPtr.PtrToStructure<MINIDUMP_HANDLE_OBJECT_INFORMATION>();
-                            result.AddInfo(objectInfo, objectInfo.NextInfoRva);
+                            result.AddInfo(objectInfo, rva);
                         }
                     }
                     while (objectInfo.NextInfoRva != 0 && objectInfo.SizeOfInfo != 0);
