@@ -439,11 +439,13 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
                     if (handle.ObjectNameRva != 0)
                     {
-                        objectName = _context.GetString(new DumpNative.RVA() { Value = (uint)handle.ObjectNameRva });
+                        var rva = _context.TranslateRVA((ulong)handle.ObjectNameRva);
+                        objectName = _context.GetString(rva);
                     }
                     if (handle.TypeNameRva != 0)
                     {
-                        typeName = _context.GetString(new DumpNative.RVA() { Value = (uint)handle.TypeNameRva });
+                        var rva = _context.TranslateRVA((ulong)handle.TypeNameRva);
+                        typeName = _context.GetString(rva);
                     }
 
                     var result = new DumpHandle(handle, objectName, typeName);
@@ -467,11 +469,14 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
 
                     if (handle.ObjectNameRva != 0)
                     {
-                        objectName = _context.GetString(new DumpNative.RVA() { Value = (uint)handle.ObjectNameRva });
+                        var rva = _context.TranslateRVA((ulong)handle.ObjectNameRva);
+                        objectName = _context.GetString(rva);
                     }
+
                     if (handle.TypeNameRva != 0)
                     {
-                        typeName = _context.GetString(new DumpNative.RVA() { Value = (uint)handle.TypeNameRva });
+                        var rva = _context.TranslateRVA((ulong)handle.TypeNameRva);
+                        typeName = _context.GetString(rva);
                     }
 
                     return new DumpHandle(handle, objectName, typeName);
@@ -480,8 +485,9 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                 private void SetMiniDumpObjectInfo(DumpHandle result, MINIDUMP_HANDLE_DESCRIPTOR_2 handle, DumpPointer pointer)
                 {
                     var handleInfoPtr = _context.TranslateRVA((ulong)handle.ObjectInfoRva);
-
+                    
                     var objectInfo = handleInfoPtr.PtrToStructure<MINIDUMP_HANDLE_OBJECT_INFORMATION>();
+
                     do
                     {
                         SetHandleObjectInformation(objectInfo, result, pointer);
@@ -490,7 +496,7 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
                         {
                             var nextInfoPtr = _context.TranslateRVA(objectInfo.NextInfoRva);
                             objectInfo = nextInfoPtr.PtrToStructure<MINIDUMP_HANDLE_OBJECT_INFORMATION>();
-                            result.AddInfo(objectInfo);
+                            result.AddInfo(objectInfo, objectInfo.NextInfoRva);
                         }
                     }
                     while (objectInfo.NextInfoRva != 0 && objectInfo.SizeOfInfo != 0);
@@ -2831,13 +2837,13 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
         /// </summary>
         public List<DumpHandleInfo> HandleInfoList { get; private set; }
 
-        internal void AddInfo(MINIDUMP_HANDLE_OBJECT_INFORMATION info)
+        internal void AddInfo(MINIDUMP_HANDLE_OBJECT_INFORMATION info, uint rva)
         {
             if (HandleInfoList == null)
             {
                 HandleInfoList = new List<DumpHandleInfo>();
             }
-            HandleInfoList.Add(new DumpHandleInfo(info));
+            HandleInfoList.Add(new DumpHandleInfo(info, rva));
         }
     }
 
@@ -2903,11 +2909,15 @@ namespace Microsoft.Diagnostics.Runtime.Utilities
     /// </summary>
     public class DumpHandleInfo
     {
-        internal DumpHandleInfo(MINIDUMP_HANDLE_OBJECT_INFORMATION info)
+        internal DumpHandleInfo(MINIDUMP_HANDLE_OBJECT_INFORMATION info, uint rva)
         {
             this.SizeOfInfo = info.SizeOfInfo;
             this.InfoType = (DumpHandleType)info.InfoType;
         }
+        /// <summary>
+        /// Rva address of MINIDUMP_HANDLE_OBJECT_INFORMATION  structure
+        /// </summary>
+        public uint Rva { get; private  set; }
         /// <summary>
         /// Type of object 
         /// </summary>
